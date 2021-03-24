@@ -1,4 +1,3 @@
-
 # Define server logic required to plot various variables against mpg
 shinyServer(function(input, output, session){
   observeEvent(input$help, {
@@ -15,14 +14,15 @@ shinyServer(function(input, output, session){
     if(input$submit1){
       
       
-      if(is.null(input$mafFile)){
-        mafFile <- system.file("extdata", "HCC_LDC.maf", package = "MesKit")
+      if(is.null(input$mafFile$datapath)){
+        mafFile <- system.file("extdata", "CRC_HZ.maf", package = "MesKit")
+        clinFile <- system.file("extdata/", "CRC_HZ.clin.txt", package = "MesKit")
         if(input$useccffile){
-          ccfFile <- system.file("extdata", "HCC_LDC.ccf.tsv", package = "MesKit")
+          ccfFile <- system.file("extdata", "CRC_HZ.ccf.tsv", package = "MesKit")
         }else{
           ccfFile <- NULL
         }
-        maf <- readMaf(mafFile = mafFile,ccfFile = ccfFile)
+        maf <- readMaf(mafFile = mafFile, clinicalFile = clinFile, ccfFile = ccfFile)
       } else {
         if(!is.null(input$mafFile)){
           if(is.null(input$ccfFile)){
@@ -31,11 +31,15 @@ shinyServer(function(input, output, session){
             ccfFile <- input$ccfFile$datapath
           }
           maf <- readMaf(mafFile = input$mafFile$datapath,
+                         clinicalFile =  input$clinFile$datapath,
                          ccfFile =  ccfFile,
-                         refBuild = input$ref)          
+                         refBuild = input$ref,
+                         use.indel.ccf =  input$ccfFile_use_indel_ccf)          
         }
         else{
-          maf <-  readMaf(mafFile = input$mafFile$datapath, refBuild = input$ref)
+          maf <-  readMaf(mafFile = input$mafFile$datapath,
+                          clinicalFile =  input$clinFile$datapath,
+                          refBuild = input$ref)
         }
       }
       return(maf)
@@ -58,24 +62,34 @@ shinyServer(function(input, output, session){
     })
   })
   
-  buttonValue <- reactiveValues(a = 0, b = 0)
+  buttonValue <- reactiveValues(maf = 0, ccf = 0, clin = 0, seg = 0)
   observeEvent(input$iecontrol01,{
-    buttonValue$a <- buttonValue$a + 1
-    if(buttonValue$a == 2){
-      buttonValue$a <- 0
+    buttonValue$ccf <- 0
+    buttonValue$clin <- 0
+    buttonValue$maf <- buttonValue$maf + 1
+    if(buttonValue$maf == 2){
+      buttonValue$maf <- 0
     }
-    buttonValue$b <- 0
   })
   observeEvent(input$iecontrol02,{
-    buttonValue$a <- 0
-    buttonValue$b <- buttonValue$b + 1
-    if(buttonValue$b == 2){
-      buttonValue$b <- 0
+    buttonValue$maf <- 0
+    buttonValue$clin <- 0
+    buttonValue$ccf <- buttonValue$ccf + 1
+    if(buttonValue$ccf == 2){
+      buttonValue$ccf <- 0
+    }
+  })
+  observeEvent(input$iecontrol_clin,{
+    buttonValue$maf <- 0
+    buttonValue$ccf <- 0
+    buttonValue$clin <- buttonValue$clin + 1
+    if(buttonValue$clin == 2){
+      buttonValue$clin <- 0
     }
   })
   ## output Introduction of maf datatable
   output$ie1 <- renderUI({
-    if(buttonValue$a == 1){
+    if(buttonValue$maf == 1){
       tagList(
           div(
             h3(strong("The MAF files")),
@@ -95,9 +109,9 @@ shinyServer(function(input, output, session){
       )
     }
   })
-  output$ied1 <- renderDataTable({
-    if(input$iecontrol01){
-      mafFile <- system.file("extdata/", "HCC_LDC.maf", package = "MesKit")
+  output$ied1 <- DT::renderDataTable({
+    if(buttonValue$maf == 1){
+      mafFile <- system.file("extdata/", "CRC_HZ.maf", package = "MesKit")
       maf_data <- data.table::fread(
           file = mafFile,
           quote = "",
@@ -108,13 +122,19 @@ shinyServer(function(input, output, session){
           skip = "Hugo_Symbol",
           stringsAsFactors = FALSE
       )
-      d <- datatable(maf_data, options = list(searching = TRUE, pageLength = 5, lengthMenu = c(5, 10, 15, 18), scrollX = TRUE, fixedColumns = TRUE, columnDefs=list(list(width="10em",targets="_all"))),rownames = FALSE, width=5)
+      d <- datatable(maf_data, 
+                     options = list(searching = TRUE,
+                                    pageLength = 5,
+                                    lengthMenu = c(5, 10, 15, 18), 
+                                    scrollX = TRUE, fixedColumns = TRUE, 
+                                    columnDefs=list(list(width="10em",targets="_all"))),
+                     rownames = FALSE, width=5)
       return(d)
     }
   })
   ## output Introduction of CCF
   output$ie2 <- renderUI({
-    if(buttonValue$b == 1){
+    if(buttonValue$ccf == 1){
         tagList(
           h3(strong("The CCF file")),
           p("CCF files contain cancer cell fraction of each mutation.",
@@ -127,9 +147,9 @@ shinyServer(function(input, output, session){
         )
     }
   })
-  output$ied2 <- renderDataTable({
-    if(input$iecontrol02){
-     ccfFile <- system.file("extdata/", "HCC_LDC.ccf.tsv", package = "MesKit")
+  output$ied2 <- DT::renderDataTable({
+    if(buttonValue$ccf == 1){
+     ccfFile <- system.file("extdata/", "CRC_HZ.ccf.tsv", package = "MesKit")
      ccf_data <- suppressWarnings(data.table::fread(
          ccfFile,
          quote = "",
@@ -139,6 +159,38 @@ shinyServer(function(input, output, session){
          stringsAsFactors = FALSE
      ))
       d <- datatable(ccf_data, options = list(searching = TRUE, pageLength = 5, lengthMenu = c(5, 10, 15, 18), scrollX = TRUE, fixedColumns = TRUE, columnDefs=list(list(width="10em",targets="_all"))),rownames = FALSE, width=5)
+      return(d)
+    }
+  })
+  
+  ## output Introduction of clinical file
+  output$ie_clin <- renderUI({
+    if(buttonValue$clin == 1){
+      tagList(
+        h3(strong("The clinical file")),
+        p("Clinical file store clinical information.",
+          style = "font-size:16px; font-weight:500;line-height:30px;"),
+        p(strong("Mandatory fields"),": Tumor_Sample_Barcode, Tumor_ID, Patient_ID, Tumor_Sample_Label(optional)",
+          style = "font-size:16px; font-weight:500;line-height:30px;"),
+        h3(strong("Example clinical file:")),
+        DT::dataTableOutput("ied_clin"),
+        br()
+      )
+    }
+  })
+  output$ied_clin <- DT::renderDataTable({
+    if(buttonValue$clin == 1){
+      clin.File <- system.file("extdata/", "CRC_HZ.clin.txt", package = "MesKit")
+      clin_data <- data.table::fread(
+        file = clin.File,
+        quote = "",
+        header = TRUE,
+        data.table = TRUE,
+        fill = TRUE,
+        sep = '\t',
+        stringsAsFactors = FALSE
+      )
+      d <- datatable(clin_data, options = list(searching = TRUE, pageLength = 5, lengthMenu = c(5, 10, 15, 18), scrollX = TRUE, fixedColumns = TRUE, columnDefs=list(list(width="10em",targets="_all"))),rownames = FALSE, width=5)
       return(d)
     }
   })
@@ -179,7 +231,10 @@ shinyServer(function(input, output, session){
           }
       }
   })
+  
+  
 
+  
   ms <- eventReactive(input$submit_mathscore, {
     maf <- isolate(varsMaf$maf)
     validate(
@@ -192,12 +247,32 @@ shinyServer(function(input, output, session){
     mathScore(maf,
               patient.id = patientid,
               min.vaf = as.numeric(input$mathscore_minvaf),
-              withinTumor = input$mathscore_withintumor)
-  })
-  output$mathScore <- DT::renderDataTable({
-    ms()
+              withinTumor = input$mathscore_withintumor,
+              use.adjVAF = input$mathscore_useadjvaf,
+              use.tumorSampleLabel = input$mathscore_usetumorsamplelabel)
   })
   
+  getpatient.mathscore <- eventReactive(input$mathscore.patientlist, {
+    return(input$mathscore.patientlist)
+  })
+  
+  output$mathscore.patientlist <- renderUI({
+    if(!is.null(ms())){
+      if(length(ms()) > 0){
+        names <- names(ms())
+        selectInput("mathscore.patientlist", 
+                    div(style = "font-size:1.5em; font-weight:600; ", 'Patient'),
+                    choices = names, width = 600) 
+      }
+    }
+  })
+  
+  
+  output$mathScore <- DT::renderDataTable({
+    return(ms()[[getpatient.mathscore()]])
+  })
+    
+  # ms_value <- ms()
   
   output$msdb <- renderUI({
     if(!is.null(ms())){
@@ -248,13 +323,16 @@ shinyServer(function(input, output, session){
       )
       patientid <- input$vafcluster_patientid
       withProgress(min = 0, max = 1, value = 0,{
-          setProgress(message = 'Processing: perform vaf clustering')
-          vc <- vafCluster(maf, 
+          setProgress(message = 'Processing: perform mutation clustering')
+          vc <- mutCluster(maf, 
                            patient.id = patientid,
                            withinTumor = input$vafcluster_withintumor,
                            segFile = input$vafcluster_segfile,
-                           min.vaf = as.numeric(input$vafcluster_minvaf) ,
-                           max.vaf = as.numeric(input$vafcluster_maxvaf))        
+                           # min.vaf = as.numeric(input$vafcluster_minvaf) ,
+                           # max.vaf = as.numeric(input$vafcluster_maxvaf),
+                           use.adjVAF = input$vafcluster_useadjvaf,
+                           use.ccf = input$vafcluster_useccf,
+                           use.tumorSampleLabel = input$vafcluster_usetumorsamplelabel)        
           incProgress(amount = 1)
           setProgress(message = 'vafCluster done!')
       })
@@ -442,7 +520,14 @@ shinyServer(function(input, output, session){
       validate(
           need(!(is.null(maf)), "Please upload data in 'Input Data'!")
       )
-      
+      if(is(maf, "MafList")){
+        maf_column <- colnames(getMafData(maf[[1]]) ) 
+      }else{
+        maf_column <- colnames(getMafData(maf) ) 
+      }
+      validate(
+        need("CCF" %in% maf_column, "Please upload ccf data in 'Input Data'!")
+      )
       patientid <- input$ccfauc_patientid
       
       withProgress(min = 0, max = 1, value = 0, {
@@ -453,7 +538,9 @@ shinyServer(function(input, output, session){
           cc <- ccfAUC(maf,
                        patient.id = patientid,
                        min.ccf = as.numeric(input$ccfauc_minccf) ,
-                       withinTumor = input$ccfauc_withintumor)
+                       withinTumor = input$ccfauc_withintumor,
+                       # use.adjVAF = input$ccfauc_useadjvaf,
+                       use.tumorSampleLabel = input$ccfauc_usetumorsamplelabel)
           incProgress(amount = 1)
           setProgress(message = 'ccfAUC done!')
       })
@@ -630,10 +717,12 @@ shinyServer(function(input, output, session){
                         min.vaf = as.numeric(input$calfst_minvaf) ,
                         min.total.depth = as.numeric(input$calfst_mintotaldepth),
                         withinTumor =input$calfst_withinTumor,
+                        use.adjVAF = input$calfst_useadjvaf,
                         # title = title,
                         use.circle = input$calfst_usecircle,
                         number.cex = as.numeric(input$calfst_numbercex),
-                        number.col = input$calfst_numbercol)
+                        number.col = input$calfst_numbercol,
+                        use.tumorSampleLabel = input$calfst_usetumorsamplelabel)
           incProgress(amount = 1)
           setProgress(message = 'calFst done!')
       })
@@ -803,6 +892,14 @@ shinyServer(function(input, output, session){
       validate(
           need(!(is.null(maf)), "Please upload data in 'Input Data'!")
       )
+      if(is(maf, "MafList")){
+        maf_column <- colnames(getMafData(maf[[1]]) ) 
+      }else{
+        maf_column <- colnames(getMafData(maf) ) 
+      }
+      validate(
+        need("CCF" %in% maf_column, "Please upload ccf data in 'Input Data'!")
+      )
       withProgress(min = 0, max = 1, value = 0, {
           setProgress(message = "Processing: calculating Nei's distance")
           # if(input$calneidist_title==""){
@@ -814,9 +911,11 @@ shinyServer(function(input, output, session){
                            patient.id = input$calneidist_patientid,
                            min.ccf = as.numeric(input$calneidist_minccf) ,
                            withinTumor = input$calneidist_withintumor,
+                           use.adjVAF = input$calneidist_useadjvaf,
                            use.circle = input$calneidist_usecircle,
                            number.cex = as.numeric(input$calneidist_numbercex),
-                           number.col = input$calneidist_numbercol)
+                           number.col = input$calneidist_numbercol,
+                           use.tumorSampleLabel = input$calneidist_usetumorsamplelabel)
           incProgress(amount = 1)
           setProgress(message = 'calNeiDist done!')
       })
@@ -1058,7 +1157,10 @@ shinyServer(function(input, output, session){
                            mut.threshold = as.numeric(input$mutheatmap_mutthreshold),
                            sample.text.size = as.numeric(input$mutheatmap_sampletextsize),
                            legend.title.size = as.numeric(input$mutheatmap_legendtitlesize),
-                           gene.text.size = gene.text.size)
+                           gene.text.size = gene.text.size,
+                           use.adjVAF = input$mutheatmap_useadjvaf,
+                           classByTumor = input$mutheatmap_classByTumor,
+                           use.tumorSampleLabel = input$mutheatmap_usetumorsamplelabel)
           incProgress(amount = 1)
           setProgress(message = 'mutHeatmap done!')
       })
@@ -1147,20 +1249,20 @@ shinyServer(function(input, output, session){
       contentType = paste('image/',input$Download_mutheatmap_plot_check,sep="")
   )
    
-  ## comparejsi sever
+  ## caljsi sever
   
-  output$comparejsi_patientid_ui <- renderUI({
+  output$caljsi_patientid_ui <- renderUI({
       maf <- varsMaf$maf
       if(!is.null(maf)){
           if(class(maf) == "MafList"){
               patient.list <- names(maf) 
               tagList(
-                  selectizeInput("comparejsi_patientid",
+                  selectizeInput("caljsi_patientid",
                                  label = div(style = "font-size:1.5em; font-weight:600;  ", "Select patients"),
                                  choices = patient.list,
                                  select = patient.list[1],
                                  multiple = TRUE),
-                  bsTooltip(id = "comparejsi_patientid",
+                  bsTooltip(id = "caljsi_patientid",
                             title = 'Select the specific patients. Default: all patients are included',
                             placement = "top",
                             trigger = "hover"),
@@ -1169,12 +1271,12 @@ shinyServer(function(input, output, session){
       }
   })
   
-  output$comparejsi_pairbytumor_ui <- renderUI({
+  output$caljsi_pairbytumor_ui <- renderUI({
       maf <- varsMaf$maf
       if(!is.null(maf)){
-          if(class(maf) == "MafList" & !is.null(input$comparejsi_patientid)){
-              if(length(input$comparejsi_patientid) == 1){
-                  x <- maf[[which(names(maf) == input$comparejsi_patientid) ]]@data
+          if(class(maf) == "MafList" & !is.null(input$caljsi_patientid)){
+              if(length(input$caljsi_patientid) == 1){
+                  x <- maf[[which(names(maf) == input$caljsi_patientid) ]]@data
                   if(length(unique(x$Tumor_ID)) <= 1){
                       return(NULL)
                   }
@@ -1186,11 +1288,11 @@ shinyServer(function(input, output, session){
               }
           }
           tagList(
-              checkboxInput('comparejsi_pairbytumor',
+              checkboxInput('caljsi_pairbytumor',
                             value = FALSE,
                             label = div(style = "font-size:1.5em; font-weight:600; padding-left:12px", 'Pair by tumor'),
                             width = 500),
-              bsTooltip(id = "comparejsi_pairbytumor",
+              bsTooltip(id = "caljsi_pairbytumor",
                         title = "calculate JSI by tumor",
                         placement = "top",
                         trigger = "hover")
@@ -1198,46 +1300,56 @@ shinyServer(function(input, output, session){
       }
   })
   
-  comparejsi <- eventReactive(input$submit_comparejsi,{
+  caljsi <- eventReactive(input$submit_caljsi,{
       maf <- varsMaf$maf
       validate(
           need(!(is.null(maf)), "Please upload data in 'Input Data'!")
       )
+      if(is(maf, "MafList")){
+        maf_column <- colnames(getMafData(maf[[1]]) ) 
+      }else{
+        maf_column <- colnames(getMafData(maf) ) 
+      }
+      validate(
+        need("CCF" %in% maf_column, "Please upload ccf data in 'Input Data'!")
+      )
       withProgress(min = 0, max = 1, value = 0, {
           setProgress(message = 'Processing: calculating Jaccard similarity index')
 
-          # if(input$comparejsi_title==""){
+          # if(input$caljsi_title==""){
           #     title <- NULL
           # }else{
-          #     title <- input$comparejsi_title
+          #     title <- input$caljsi_title
           # }
-          if(is.null(input$comparejsi_pairbytumor)){
+          if(is.null(input$caljsi_pairbytumor)){
               pairbytumor <- FALSE
           }else{
-              pairbytumor <- input$comparejsi_pairbytumor
+              pairbytumor <- input$caljsi_pairbytumor
           }
-          cc <- compareJSI(maf, 
-                           patient.id = input$comparejsi_patientid,
-                           min.vaf = as.numeric(input$comparejsi_minccf) ,
-                           pairByTumor = pairbytumor,
+          cc <- calJSI(maf, 
+                      patient.id = input$caljsi_patientid,
+                      min.vaf = as.numeric(input$caljsi_minccf) ,
+                      pairByTumor = pairbytumor,
                            # title = title,
-                           use.circle = input$comparejsi_usecircle,
-                           number.cex = as.numeric(input$comparejsi_numbercex),
-                           number.col = input$comparejsi_numbercol)
+                      use.circle = input$caljsi_usecircle,
+                      number.cex = as.numeric(input$caljsi_numbercex),
+                      number.col = input$caljsi_numbercol,
+                      plot = TRUE,
+                      use.tumorSampleLabel = input$caljsi_usetumorsamplelabel)
           incProgress(amount = 1)
-          setProgress(message = 'compareJSI done!')
+          setProgress(message = 'caljsi done!')
       })
       return(cc)
   })
   
   
   
-  output$comparejsi.patientlist <- renderUI({
-      if(!is.null(comparejsi())){
-          if(!"JSI.plot" %in% names(comparejsi())){
-              names <- names(comparejsi())
+  output$caljsi.patientlist <- renderUI({
+      if(!is.null(caljsi())){
+          if(!"JSI.plot" %in% (names(caljsi()))){
+              names <- names(caljsi())
               tagList(
-                  selectInput("comparejsi.pl", 
+                  selectInput("caljsi.pl", 
                               div(style = "font-size:1.5em; font-weight:600; ", 'Patient'),
                               choices = names, width = 600) 
               )
@@ -1245,36 +1357,36 @@ shinyServer(function(input, output, session){
       }
   })
   
-  getpatient.comparejsi <- eventReactive(input$comparejsi.pl,{
-      return(input$comparejsi.pl)
+  getpatient.caljsi <- eventReactive(input$caljsi.pl,{
+      return(input$caljsi.pl)
   })
   
-  comparejsi_width <- reactive({
-      return(input$comparejsi_width)
+  caljsi_width <- reactive({
+      return(input$caljsi_width)
   })
-  comparejsi_height <- reactive({
-      return(input$comparejsi_height)
+  caljsi_height <- reactive({
+      return(input$caljsi_height)
   })
   
-  output$comparejsi_plot <- renderPlot({
-      if(!is.null(comparejsi())){
-          if(!"JSI.plot" %in% names(comparejsi())){
-              return(comparejsi()[[getpatient.comparejsi()]]$JSI.plot)
+  output$caljsi_plot <- renderPlot({
+      if(!is.null(caljsi())){
+          if(!"JSI.plot" %in% names(caljsi())){
+              return(caljsi()[[getpatient.caljsi()]]$JSI.plot)
           }else{
-              return(comparejsi()$JSI.plot)
+              return(caljsi()$JSI.plot)
           }
       }
   },  
-  width = comparejsi_width,
-  height = comparejsi_height,
+  width = caljsi_width,
+  height = caljsi_height,
   res = 100)
   
-  output$comparejsi_db_ui <- renderUI({
-      if(!is.null(comparejsi())){
+  output$caljsi_db_ui <- renderUI({
+      if(!is.null(caljsi())){
           fluidRow(
               column(
                   width = 2,
-                  radioButtons(inputId = 'Download_comparejsi_plot_check', 
+                  radioButtons(inputId = 'Download_caljsi_plot_check', 
                                label = div(style = "font-size:18px; font-weight: bold; ", 'Save type as:'),
                                choiceNames = list(
                                    tags$span(style = "font-size:14.5px; font-weight:400; ", "png"), 
@@ -1285,39 +1397,39 @@ shinyServer(function(input, output, session){
               ),
               column(
                   width = 3,
-                  downloadBttn('Download_comparejsi_plot', 'Download')
+                  downloadBttn('Download_caljsi_plot', 'Download')
               )
           )
       }
   })
   
-  output$Download_comparejsi_plot <- downloadHandler(
+  output$Download_caljsi_plot <- downloadHandler(
       filename = function() {
-          paste("comparejsi.",input$Download_comparejsi_plot_check, sep='')
+          paste("caljsi.",input$Download_caljsi_plot_check, sep='')
       },
       content = function(file) {
-          if (input$Download_comparejsi_plot_check == "png"){
-              png(file,width = input$comparejsi_width , height = input$comparejsi_height,res = 100)
+          if (input$Download_caljsi_plot_check == "png"){
+              png(file,width = input$caljsi_width , height = input$caljsi_height,res = 100)
           }
-          else if (input$Download_comparejsi_plot_check == "pdf"){
-              pdf(file,width = input$comparejsi_width/100 , height = input$comparejsi_height/100)
+          else if (input$Download_caljsi_plot_check == "pdf"){
+              pdf(file,width = input$caljsi_width/100 , height = input$caljsi_height/100)
           }
-          if(!"JSI.plot" %in% names(comparejsi())){
-              print(comparejsi()[[getpatient.comparejsi()]]$JSI.plot)
+          if(!"JSI.plot" %in% names(caljsi())){
+              print(caljsi()[[getpatient.caljsi()]]$JSI.plot)
           }else{
-              print(comparejsi()$JSI.plot)
+              print(caljsi()$JSI.plot)
           }
           dev.off()
       },
-      contentType = paste('image/',input$Download_comparejsi_plot_check,sep="")
+      contentType = paste('image/',input$Download_caljsi_plot_check,sep="")
   )
   
-  output$comparejsi_pair_table <- DT::renderDataTable({
-      if(!is.null(comparejsi())){
-          if(!"JSI.plot" %in% names(comparejsi())){
-              m <- comparejsi()[[getpatient.comparejsi()]]$JSI.pair
+  output$caljsi_pair_table <- DT::renderDataTable({
+      if(!is.null(caljsi())){
+          if(!"JSI.plot" %in% names(caljsi())){
+              m <- caljsi()[[getpatient.caljsi()]]$JSI.pair
           }else{
-              m <- comparejsi()$JSI.pair
+              m <- caljsi()$JSI.pair
           }
           rownames(m) <- colnames(m)
           m <- as.data.frame(m)
@@ -1333,30 +1445,30 @@ shinyServer(function(input, output, session){
   })
   
   
-  output$comparejsi_pair_table_ui <- renderUI({
-      if(!is.null(comparejsi())){
+  output$caljsi_pair_table_ui <- renderUI({
+      if(!is.null(caljsi())){
           tagList(
               div(style = "font-size:1.5em; font-weight:600; ", "JSI pair"),
               br(),
-              DT::dataTableOutput('comparejsi_pair_table'),
+              DT::dataTableOutput('caljsi_pair_table'),
               br(),
               fluidRow(
                   column(
                       width = 3,
-                      downloadBttn('Download_comparejsi_pair_table', 'Download')
+                      downloadBttn('Download_caljsi_pair_table', 'Download')
                   )
               )
           )
       }
   })
   
-  output$Download_comparejsi_pair_table <- downloadHandler(
-      filename = "comparejsi.csv",
+  output$Download_caljsi_pair_table <- downloadHandler(
+      filename = "caljsi.csv",
       content = function(file){
-          if(!"JSI.plot" %in% names(comparejsi())){
-              m <- comparejsi()[[getpatient.comparejsi()]]$JSI.pair
+          if(!"JSI.plot" %in% names(caljsi())){
+              m <- caljsi()[[getpatient.caljsi()]]$JSI.pair
           }else{
-              m <- comparejsi()$JSI.pair
+              m <- caljsi()$JSI.pair
           }
           rownames(m) <- colnames(m)
           m <- as.data.frame(m)
@@ -1481,24 +1593,25 @@ shinyServer(function(input, output, session){
             if(!is.null(input$plotmutprofile_genelist$datapath)){
               genelist <- as.character(read.table(input$plotmutprofile_genelist$datapath)$V1)
             }else{
-              genelist_file <- system.file("extdata", "IntOGen-DriverGenes_HC.tsv", package = "MesKit")
+              genelist_file <- system.file("extdata", "IntOGen-DriverGenes_COREAD.tsv", package = "MesKit")
               genelist <- as.character(read.table(genelist_file)$V1)
             }
           }else{
             genelist <- NULL
           }
-          cc <- plotMutProfile(maf,
+          p <- plotMutProfile(maf,
                                patient.id = patientid,
                                geneList = genelist,
                                classByTumor = input$plotmutprofile_classByTumor,
                                class = input$plotmutprofile_class,
                                topGenesCount = input$plotmutprofile_topGenesCount,
-                               remove_empty_columns = input$plotmutprofile_remove_empty_columns,
-                               remove_empty_rows = input$plotmutprofile_remove_empty_rows)
+                               removeEmptyCols = input$plotmutprofile_remove_empty_columns,
+                               removeEmptyRows = input$plotmutprofile_remove_empty_rows,
+                               use.tumorSampleLabel = input$plotmutprofile_usetumorsamplelabel)
           incProgress(amount = 1)
           setProgress(message = 'plotMutProfile done!')
       })
-      return(cc)
+      return(p)
   })
   
   
@@ -1515,7 +1628,7 @@ shinyServer(function(input, output, session){
   
   output$plotmutprofile_plot <- renderPlot({
       if(!is.null(plotmutprofile())){
-          return(plotmutprofile())
+       plotmutprofile()
       }
   },  
   width = plotmutprofile_width,
@@ -1524,7 +1637,7 @@ shinyServer(function(input, output, session){
   
   
   output$plotmutprofile_download_button_ui <- renderUI({
-      if(!is.null(plotmutprofile())){
+      if(as.numeric(input$submit_plotmutprofile) > 0){
           fluidRow(
               column(
                   width = 2,
@@ -1564,6 +1677,37 @@ shinyServer(function(input, output, session){
   
   ## plotCNA sever 
   
+  observeEvent(input$iecontrol_seg,{
+    buttonValue$seg <- buttonValue$seg + 1
+    if(buttonValue$seg == 2){
+      buttonValue$seg <- 0
+    }
+  })
+  
+  output$ie_seg <- renderUI({
+    if(buttonValue$seg == 1){
+      tagList(
+        h3(strong("The segment file")),
+        p("The segment file store information about copy number of each segment.",
+          style = "font-size:16px; font-weight:500;line-height:30px;"),
+        p(strong("Mandatory fields"),": Patient_ID, Tumor_Sample_Barcode, Chromosome, Start_Position, End_Position, CopyNumber, Tumor_Sample_Label(optional)",
+          style = "font-size:16px; font-weight:500;line-height:30px;"),
+        h3(strong("Example segment file:")),
+        DT::dataTableOutput("ied_seg"),
+        br()
+      )
+    }
+  })
+  output$ied_seg <- DT::renderDataTable({
+    if(buttonValue$seg == 1){
+      segFile <- system.file("extdata", "CRC_HZ.seg.txt", package = "MesKit")
+      seg <- suppressWarnings(data.table::fread(segFile, header=TRUE, sep="\t", stringsAsFactors = FALSE))
+      
+      d <- datatable(seg, options = list(searching = TRUE, pageLength = 5, lengthMenu = c(5, 10, 15, 18), scrollX = TRUE, fixedColumns = TRUE, columnDefs=list(list(width="10em",targets="_all"))),rownames = FALSE, width=5)
+      return(d)
+    }
+  })
+  
   output$plotcna.patientlist <- renderUI({
       
       if(!is.null(input$plotcna_segfile$datapath)){
@@ -1580,6 +1724,21 @@ shinyServer(function(input, output, session){
                             placement = "top",
                             trigger = "hover"),
               )
+      }else{
+        segFile <- system.file("extdata", "CRC_HZ.seg.txt", package = "MesKit")
+        seg <- readSegment(segFile = segFile) %>% dplyr::bind_rows()
+        patient.list <- unique(seg$Patient_ID)
+        tagList(
+          selectizeInput("plotcna_patientid",
+                         label = div(style = "font-size:1.5em; font-weight:600;  ", "Select patients"),
+                         choices = patient.list,
+                         select  = patient.list,
+                         multiple = TRUE),
+          bsTooltip(id = "plotcna_patientid",
+                    title = 'Select the specific patients. Default: NULL, all patients are included',
+                    placement = "top",
+                    trigger = "hover"),
+        )
       }
   })
   
@@ -1609,19 +1768,26 @@ shinyServer(function(input, output, session){
   
   plotcna <- eventReactive(input$submit_plotcna,{
       
-      validate(
-          need(!is.null(input$plotcna_segfile$datapath),
-               "PlotCNA needs copy number information, upload segmentation file first"
-                    )
-          )
+      # validate(
+      #     need(!is.null(input$plotcna_segfile$datapath),
+      #          "PlotCNA needs copy number information, upload segmentation file first"
+      #               )
+      #     )
+    
       
       withProgress(min = 0, max = 2, value = 0, {
+        if(is.null(input$plotcna_segfile$datapath)){
+          setProgress(message = 'Processing: drawing example CNA profile')
+          segFile <- system.file("extdata", "CRC_HZ.seg.txt", package = "MesKit")
+        }else{
           setProgress(message = 'Processing: drawing CNA profile')
+          segFile <- input$plotcna_segfile$datapath
+        }
         if(input$plotmutprofile_usegisticAmpGenes){
           if(!is.null(input$plotcna_gisticAmpGenesFile$datapath)){
             gisticAmpGenesFile <- input$plotcna_gisticAmpGenesFile$datapath
           }else{
-            gisticAmpGenesFile <- system.file("extdata", "LIHC_amp_genes.conf_99.txt", package = "MesKit")
+            gisticAmpGenesFile <- system.file("extdata", "COREAD_amp_genes.conf_99.txt", package = "MesKit")
           }
         }else{
           gisticAmpGenesFile <- NULL
@@ -1630,7 +1796,7 @@ shinyServer(function(input, output, session){
           if(!is.null(input$plotcna_gisticDelGenesFile$datapath)){
             gisticDelGenesFile <- input$plotcna_gisticDelGenesFile$datapath
           }else{
-            gisticDelGenesFile <- system.file("extdata", "LIHC_del_genes.conf_99.txt", package = "MesKit")
+            gisticDelGenesFile <- system.file("extdata", "COREAD_del_genes.conf_99.txt", package = "MesKit")
           }
         }else{
           gisticDelGenesFile <- NULL
@@ -1639,13 +1805,12 @@ shinyServer(function(input, output, session){
           if(!is.null(input$plotcna_gisticAllLesionsFile$datapath)){
             gisticAllLesionsFile <- input$plotcna_gisticAllLesionsFile$datapath
           }else{
-            gisticAllLesionsFile <- system.file("extdata", "LIHC_all_lesions.conf_99.txt", package = "MesKit")
+            gisticAllLesionsFile <- system.file("extdata", "COREAD_all_lesions.conf_99.txt", package = "MesKit")
           }
         }else{
           gisticAllLesionsFile <- NULL
         }
-        print(input$plotcna_gisticqval)
-          seg <- readSegment(segFile = input$plotcna_segfile$datapath,
+          seg <- readSegment(segFile = segFile,
                              gisticAllLesionsFile = gisticAllLesionsFile,
                              gisticAmpGenesFile = gisticAmpGenesFile,
                              gisticDelGenesFile = gisticDelGenesFile,
@@ -1670,7 +1835,9 @@ shinyServer(function(input, output, session){
                               legend.text.size = as.numeric(input$plotcna_legendtextsize) ,
                               legend.title.size = as.numeric(input$plotcna_legendtitlesize) ,
                               chrom.bar.height = as.numeric(input$plotcna_chrombarheight),
-                              showRownames = input$plotcna_showrownames)
+                              showRownames = input$plotcna_showrownames,
+                              removeEmptyChr = input$plotcna_removeempytchr,
+                              use.tumorSampleLabel = input$plotcna_usetumorsamplelabel)
           seg <- dplyr::bind_rows(seg)
           if(!is.null(patientid)){
               seg <- seg[Patient_ID %in% patientid]
@@ -1680,6 +1847,8 @@ shinyServer(function(input, output, session){
       })
       return(list(seg = seg, cna.plot = cna.plot))
   })
+  
+  # plotcna_value <- reactiveValues(v = plotcna())
   
   plotcna_width <- reactive({
       return(input$plotcna_width)
@@ -1739,7 +1908,6 @@ shinyServer(function(input, output, session){
   output$plotcna_table <- DT::renderDataTable({
       if(!is.null(plotcna())){
           t <- plotcna()$seg
-          print(t)
           d <- datatable(t, options = list(searching = TRUE, pageLength = 10, lengthMenu = c(5, 10, 15, 18), scrollX = TRUE, fixedColumns = TRUE, columnDefs=list(list(width="10em",targets="_all"))),rownames = FALSE, width=5)  
           return(d)
       }
@@ -1749,7 +1917,11 @@ shinyServer(function(input, output, session){
   output$plotcna_table_ui <- renderUI({
       if(!is.null(plotcna())){
           tagList(
-              div(style = "font-size:1.5em; font-weight:600; ", "Segment"),
+              if(is.null(input$plotcna_segfile$datapath)){
+                div(style = "font-size:1.5em; font-weight:600; ", "Example segment(CRC_HZ)")
+              }else{
+                div(style = "font-size:1.5em; font-weight:600; ", "Segment")
+              },
               br(),
               DT::dataTableOutput('plotcna_table'),
               br(),
@@ -2023,7 +2195,7 @@ shinyServer(function(input, output, session){
                             label = div(style = "font-size:1.5em; font-weight:600; padding-left:12px", 'Pair by tumor'),
                             width = 500),
               bsTooltip(id = "compareccf_pairbytumor",
-                        title = "Compare CCF by tumor",
+                        title = "Pair by tumor types in each patients,default is FALSE.",
                         placement = "top",
                         trigger = "hover")
           )
@@ -2034,6 +2206,14 @@ shinyServer(function(input, output, session){
       maf <- isolate(varsMaf$maf)
       validate(
           need(!(is.null(maf)), "Please upload data in 'Input Data'!")
+      )
+      if(is(maf, "MafList")){
+        maf_column <- colnames(getMafData(maf[[1]]) ) 
+      }else{
+        maf_column <- colnames(getMafData(maf) ) 
+      }
+      validate(
+        need("CCF" %in% maf_column, "Please upload ccf data in 'Input Data'!")
       )
       progress <- Progress$new(session, min=0, max=1)
       on.exit(progress$close())
@@ -2046,7 +2226,8 @@ shinyServer(function(input, output, session){
       cc <- compareCCF(maf,
                        patient.id = input$compareccf_patientid,
                        min.ccf = input$compareccf_minccf,
-                       pairByTumor = pairbytumor)
+                       pairByTumor = pairbytumor,
+                       use.tumorSampleLabel = input$compareccf_usetumorsamplelabel)
       progress$set(value = 1)
       return(cc)
   })
@@ -2214,19 +2395,38 @@ shinyServer(function(input, output, session){
                                     bootstrap.rep.num = as.numeric(input$plotphylotree_getphylotree_bootstraprepnum))
           
           incProgress(amount=1)
-          setProgress(message = 'Processing: plot phylogenetic tree')
+          setProgress(message = 'Processing: visualize phylogenetic tree')
           
           if(input$plotphylotree_branchcol == "NULL"){
               branchCol <- NULL
           }else{
               branchCol <- input$plotphylotree_branchcol
           }
+          
+          scale_bar_x <- NULL
+          scale_bar_y <- NULL
+          if(input$plotphylotree_show_scale_bar){
+            if(input$plotphylotree_scale_bar_x != ""){
+              scale_bar_x <- as.numeric(input$plotphylotree_scale_bar_x)  
+            }else{
+              scale_bar_x <- NULL
+            }
+            if(input$plotphylotree_scale_bar_y != ""){
+              scale_bar_y <- as.numeric(input$plotphylotree_scale_bar_y)  
+            }else{
+              scale_bar_y <- NULL
+            }
+          }
           plot.list <- plotPhyloTree(phyloTree,
                                      branchCol = branchCol,
                                      show.bootstrap = input$plotphylotree_showbootstrap,
                                      min.ratio = as.numeric(input$plotphylotree_minratio) ,
                                      signaturesRef = input$plotphylotree_signatureref,
-                                     min.mut.count = as.numeric(input$plotphylotree_minmutcount) )
+                                     min.mut.count = as.numeric(input$plotphylotree_minmutcount),
+                                     use.tumorSampleLabel = input$plotphylotree_usetumorsamplelabel,
+                                     show.scale.bar = input$plotphylotree_show_scale_bar,
+                                     scale.bar.x = scale_bar_x,
+                                     scale.bar.y = scale_bar_y)
           incProgress(amount=1)
           setProgress(message = paste("Plot phylotree done!", sep=""), detail = "") 
           
@@ -2336,10 +2536,11 @@ shinyServer(function(input, output, session){
                                      bootstrap.rep.num = as.numeric(input$comparetree_getphylotree_bootstraprepnum) )
           
           ct <- compareTree(phylotree1, phylotree2,
-                            common.col = input$comparetree_commoncol,
+                            # common.col = input$comparetree_commoncol,
                             min.ratio = as.numeric(input$comparetree_minratio) ,
                             show.bootstrap = input$comparetree_showbootstrap,
-                            plot = TRUE)
+                            plot = TRUE,
+                            use.tumorSampleLabel = input$comparetree_usetumorsamplelabel)
           
           incProgress(amount=1)
           setProgress(message = paste("Comparetree done!", sep=""), detail = "") 
@@ -2472,9 +2673,11 @@ shinyServer(function(input, output, session){
           incProgress(amount=1)
           
           
-          setProgress(message = 'Processing: triMatrix')
+          setProgress(message = 'Processing: decomposing matrix of somatic SNVs')
           
-          tm <- triMatrix(phyloTree, withinTumor = input$treemutsig_withintumor)
+          tm <- triMatrix(phyloTree,
+                          # withinTumor = input$treemutsig_withintumor,
+                          level = input$treemutsig_level)
           incProgress(amount = 1)
           
           setProgress(message = 'Processing: fitSignatrues')
@@ -2483,14 +2686,15 @@ shinyServer(function(input, output, session){
                               signature.cutoff = as.numeric(input$treemutsig_signaturecutoff))
           incProgress(amount = 1)
           
-          setProgress(message = 'Processing: drawing mutation signature profile')
+          setProgress(message = 'Processing: reconstructing mutational profiles with known signatures')
           
           if(input$treemutsig_mode == 'NULL'){
               mode <- NULL
           }else{
               mode <- input$treemutsig_mode
           }
-          pms <- plotMutSigProfile(fs, mode = mode)
+          pms <- plotMutSigProfile(fs, mode = mode,
+                                   use.tumorSampleLabel = input$treemutsig_usetumorsamplelabel)
           incProgress(amount = 1)
           
           setProgress(message = 'plotMutSigProfile done!')
@@ -2600,10 +2804,10 @@ shinyServer(function(input, output, session){
           else if (input$Download_treemutsig_plot_check == "pdf"){
               pdf(file,width = input$treemutsig_width/100 , height = input$treemutsig_height/100)
           }
-          if(class(treemutsig()) == "list"){
-              print(treemutsig()[[getpatient.treemutsig()]])
+          if(is(treemutsig()[[1]],"list")){
+              print(treemutsig()[[getpatient.treemutsig()]][[getsample.treemutsig()]])
           }else{
-              print(treemutsig())
+              print(treemutsig()[[getsample.treemutsig()]])
           }
           dev.off()
       },
